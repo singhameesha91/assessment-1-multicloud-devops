@@ -1,0 +1,18 @@
+alb_service_a_dns = "multicloud-devops-dev-alb-a-1170719732.ap-southeast-2.elb.amazonaws.com"
+alb_service_b_dns = "multicloud-devops-dev-alb-b-177230446.ap-southeast-2.elb.amazonaws.com"
+codepipeline_name = "not-created (set codestar_connection_arn)"
+dynamodb_table_name = "multicloud-devops-dev-transactions"
+ecr_repo_url_service_a = "587601535321.dkr.ecr.ap-southeast-2.amazonaws.com/multicloud-devops-dev-service-a"
+ecr_repo_url_service_b = "587601535321.dkr.ecr.ap-southeast-2.amazonaws.com/multicloud-devops-dev-service-b"
+ecs_cluster_arn = "arn:aws:ecs:ap-southeast-2:587601535321:cluster/multicloud-devops-dev-devops-cluster"
+ecs_cluster_name = "multicloud-devops-dev-devops-cluster"
+gcp_assets_bucket = "multicloud-devops-dev-assets-multicloud-devops-project"
+public_subnet_ids = [
+  "subnet-04044d1108d4ba1a4",
+  "subnet-02f48ffc540d2e299",
+]
+s3_pipeline_bucket = "multicloud-devops-dev-pipeline-artifacts-587601535321"
+service_a_url = "http://multicloud-devops-dev-alb-a-1170719732.ap-southeast-2.elb.amazonaws.com"
+service_b_url = "http://multicloud-devops-dev-alb-b-177230446.ap-southeast-2.elb.amazonaws.com"
+sns_topic_arn = "arn:aws:sns:ap-southeast-2:587601535321:multicloud-devops-dev-notifications"
+vpc_id = "vpc-0051b3bf31acfe29d"

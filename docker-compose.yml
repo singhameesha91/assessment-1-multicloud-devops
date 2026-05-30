@@ -1,0 +1,53 @@
+services:
+  # ---------- Local emulators ----------
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8001:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+
+  fake-gcs:
+    image: fsouza/fake-gcs-server:latest
+    ports:
+      - "4443:4443"
+    command: ["-scheme", "http", "-port", "4443", "-external-url", "http://fake-gcs:4443"]
+
+  # ---------- Application services ----------
+  service-a:
+    build:
+      context: ./services/service-a
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=ap-southeast-2
+      - DYNAMODB_TABLE=app-transactions
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+    depends_on:
+      - dynamodb-local
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  service-b:
+    build:
+      context: ./services/service-b
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - GCP_BUCKET=app-assets-bucket
+      - GCP_PROJECT=local-project
+      - GCS_ENDPOINT=http://fake-gcs:4443
+    depends_on:
+      - fake-gcs
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

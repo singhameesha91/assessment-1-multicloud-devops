@@ -1,0 +1,121 @@
+version: 0.2
+
+# Blue/Green Deploy Buildspec
+# This buildspec performs blue/green deployment without AWS CodeDeploy:
+#   1. Reads the new image URI from the build stage output
+#   2. Determines which target group is currently "live" (blue)
+#   3. Registers a new task definition with the new image
+#   4. Updates the ECS service to deploy to the green target group
+#   5. Waits for new tasks to pass health checks
+#   6. Swaps the ALB production listener from blue → green
+#   7. Auto-rollback: if health checks fail, reverts the listener
+#
+# Required environment variables (set by Terraform in CodeBuild project):
+#   CLUSTER_NAME, SERVICE_NAME, TASK_FAMILY, CONTAINER_NAME,
+#   LISTENER_ARN, BLUE_TG_ARN, GREEN_TG_ARN, AWS_DEFAULT_REGION
+
+phases:
+  pre_build:
+    commands:
+      - echo "=== Blue/Green Deployment Started ==="
+      - echo "Service $SERVICE_NAME in cluster $CLUSTER_NAME"
+
+      # Read image URI from build stage artifact
+      - |
+        if [ -f imagedefinitions-a.json ]; then
+          IMAGE_URI=$(cat imagedefinitions-a.json | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
+        elif [ -f imagedefinitions-b.json ]; then
+          IMAGE_URI=$(cat imagedefinitions-b.json | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
+        else
+          echo "ERROR: No imagedefinitions file found"; exit 1
+        fi
+      - echo "New image URI $IMAGE_URI"
+
+      # Determine which TG the listener currently points to (that's "blue"/live)
+      - |
+        CURRENT_TG=$(aws elbv2 describe-listeners \
+          --listener-arns $LISTENER_ARN \
+          --query "Listeners[0].DefaultActions[0].TargetGroupArn" \
+          --output text)
+      - echo "Current production TG $CURRENT_TG"
+
+      # Set green TG (the one NOT currently receiving traffic)
+      - |
+        if [ "$CURRENT_TG" = "$BLUE_TG_ARN" ]; then
+          TARGET_TG=$GREEN_TG_ARN
+        else
+          TARGET_TG=$BLUE_TG_ARN
+        fi
+      - echo "Deploying new version to TG $TARGET_TG"
+
+  build:
+    commands:
+      # Get current task definition
+      - |
+        TASK_DEF=$(aws ecs describe-task-definition \
+          --task-definition $TASK_FAMILY \
+          --query "taskDefinition" \
+          --output json)
+
+      # Create new task definition with updated image
+      - |
+        NEW_TASK_DEF=$(echo $TASK_DEF | python3 -c "
+        import sys, json
+        td = json.load(sys.stdin)
+        # Update container image
+        for c in td['containerDefinitions']:
+            if c['name'] == '$CONTAINER_NAME':
+                c['image'] = '$IMAGE_URI'
+        # Keep only fields needed for register-task-definition
+        keep = ['family','taskRoleArn','executionRoleArn','networkMode',
+                'containerDefinitions','requiresCompatibilities','cpu','memory']
+        result = {k: td[k] for k in keep if k in td}
+        print(json.dumps(result))
+        ")
+
+      # Register new task definition
+      - |
+        NEW_TASK_ARN=$(echo $NEW_TASK_DEF | aws ecs register-task-definition \
+          --cli-input-json file:///dev/stdin \
+          --query "taskDefinition.taskDefinitionArn" \
+          --output text)
+      - echo "Registered new task definition $NEW_TASK_ARN"
+
+      # Update ECS service with new task def and green target group
+      - |
+        aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service $SERVICE_NAME \
+          --task-definition $NEW_TASK_ARN \
+          --force-new-deployment \
+          --load-balancers "targetGroupArn=$TARGET_TG,containerName=$CONTAINER_NAME,containerPort=$(echo $TASK_DEF | python3 -c "import sys,json; td=json.load(sys.stdin); [print(p['containerPort']) for c in td['containerDefinitions'] if c['name']=='$CONTAINER_NAME' for p in c['portMappings']]")" \
+          --output text > /dev/null
+
+      # Wait for service to stabilize (new tasks healthy)
+      - echo "Waiting for service to stabilize (up to 5 minutes)..."
+      - |
+        aws ecs wait services-stable \
+          --cluster $CLUSTER_NAME \
+          --services $SERVICE_NAME || {
+          echo "ERROR: Service failed to stabilize. Rolling back..."
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $(echo $TASK_DEF | python3 -c "import sys,json; print(json.load(sys.stdin)['taskDefinitionArn'])") \
+            --force-new-deployment \
+            --load-balancers "targetGroupArn=$CURRENT_TG,containerName=$CONTAINER_NAME,containerPort=$(echo $TASK_DEF | python3 -c "import sys,json; td=json.load(sys.stdin); [print(p['containerPort']) for c in td['containerDefinitions'] if c['name']=='$CONTAINER_NAME' for p in c['portMappings']]")" \
+            --output text > /dev/null
+          exit 1
+        }
+
+  post_build:
+    commands:
+      # Swap the production listener to the green target group
+      - echo "Service stable. Switching production traffic to green TG..."
+      - |
+        aws elbv2 modify-listener \
+          --listener-arn $LISTENER_ARN \
+          --default-actions Type=forward,TargetGroupArn=$TARGET_TG \
+          --output text > /dev/null
+      - echo "=== Blue/Green Deployment Complete ==="
+      - echo "Production traffic now routed to $TARGET_TG"

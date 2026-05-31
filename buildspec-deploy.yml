@@ -20,12 +20,12 @@ phases:
       - echo "=== Blue/Green Deployment Started ==="
       - echo "Service $SERVICE_NAME in cluster $CLUSTER_NAME"
 
-      # Read image URI from build stage artifact
+      # Read image URI from build stage artifact (secondary source)
       - |
-        if [ -f imagedefinitions-a.json ]; then
-          IMAGE_URI=$(cat imagedefinitions-a.json | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
-        elif [ -f imagedefinitions-b.json ]; then
-          IMAGE_URI=$(cat imagedefinitions-b.json | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
+        if [ -f "$CODEBUILD_SRC_DIR_build_output_a/imagedefinitions-a.json" ]; then
+          IMAGE_URI=$(cat "$CODEBUILD_SRC_DIR_build_output_a/imagedefinitions-a.json" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
+        elif [ -f "$CODEBUILD_SRC_DIR_build_output_b/imagedefinitions-b.json" ]; then
+          IMAGE_URI=$(cat "$CODEBUILD_SRC_DIR_build_output_b/imagedefinitions-b.json" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['imageUri'])")
         else
           echo "ERROR: No imagedefinitions file found"; exit 1
         fi

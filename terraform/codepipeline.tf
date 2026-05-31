@@ -94,11 +94,12 @@ resource "aws_codepipeline" "main" {
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["build_output_a"]
+      input_artifacts = ["source_output", "build_output_a"]
       run_order       = 1
 
       configuration = {
-        ProjectName = aws_codebuild_project.deploy_service_a.name
+        ProjectName   = aws_codebuild_project.deploy_service_a.name
+        PrimarySource = "source_output"
       }
     }
 
@@ -108,12 +109,12 @@ resource "aws_codepipeline" "main" {
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["build_output_b"]
+      input_artifacts = ["source_output", "build_output_b"]
       run_order       = 1
 
       configuration = {
-        ProjectName       = aws_codebuild_project.deploy_service_b.name
-        BuildspecOverride = "buildspec-deploy.yml"
+        ProjectName   = aws_codebuild_project.deploy_service_b.name
+        PrimarySource = "source_output"
       }
     }
   }

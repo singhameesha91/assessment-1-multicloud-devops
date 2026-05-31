@@ -184,7 +184,7 @@ data "aws_iam_policy_document" "codebuild" {
 
   # IAM: pass task roles to ECS
   statement {
-    actions   = ["iam:PassRole"]
+    actions = ["iam:PassRole"]
     resources = [
       aws_iam_role.ecs_task_execution.arn,
       aws_iam_role.service_a_task.arn,
